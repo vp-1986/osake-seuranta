@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Osakekurssit – MSFT · AAPL · NVDA</title>
+
+  <!-- Chart.js + date adapter -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+  <style>
+    :root {
+      --bg:       #0d1117;
+      --card:     #161b22;
+      --border:   #30363d;
+      --text:     #e6edf3;
+      --muted:    #8b949e;
+      --accent:   #58a6ff;
+      --pos:      #3fb950;
+      --neg:      #f85149;
+      --msft:     #0078D4;
+      --aapl:     #a8b2c1;
+      --nvda:     #76B900;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 24px 20px 40px;
+      min-height: 100vh;
+    }
+
+    .container { max-width: 980px; margin: 0 auto; }
+
+    /* ── Header ── */
+    header { margin-bottom: 28px; }
+    header h1 { font-size: 1.55rem; font-weight: 700; letter-spacing: -0.02em; }
+    header p  { color: var(--muted); font-size: 0.85rem; margin-top: 5px; }
+
+    /* ── Stock cards ── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      cursor: pointer;
+      transition: opacity 0.2s, border-color 0.2s;
+      user-select: none;
+    }
+    .card:hover { border-color: var(--accent); }
+    .card.disabled { opacity: 0.35; }
+
+    .card-header { display: flex; align-items: center; gap: 8px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .card-symbol { font-weight: 700; font-size: 1rem; }
+    .card-name   { color: var(--muted); font-size: 0.78rem; margin-top: 3px; margin-left: 18px; }
+    .card-price  { font-size: 1.45rem; font-weight: 600; margin-top: 10px; }
+    .card-change { font-size: 0.82rem; margin-top: 4px; }
+    .card-change.pos { color: var(--pos); }
+    .card-change.neg { color: var(--neg); }
+    .card-hint   { color: var(--muted); font-size: 0.72rem; margin-top: 10px; }
+
+    /* ── Controls ── */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .controls-label { color: var(--muted); font-size: 0.82rem; margin-right: 4px; }
+
+    .range-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 4px 13px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      transition: all 0.15s;
+    }
+    .range-btn:hover  { border-color: var(--accent); color: var(--text); }
+    .range-btn.active { background: var(--accent); border-color: var(--accent); color: #0d1117; font-weight: 600; }
+
+    .refresh-btn {
+      margin-left: auto;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 4px 13px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      transition: all 0.15s;
+    }
+    .refresh-btn:hover { border-color: var(--accent); color: var(--text); }
+    .refresh-btn:disabled { opacity: 0.4; cursor: default; }
+
+    /* ── Chart ── */
+    .chart-wrapper {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      position: relative;
+    }
+    .chart-wrapper canvas { display: block; width: 100% !important; }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(13, 17, 23, 0.82);
+      border-radius: 10px;
+      gap: 10px;
+    }
+    .overlay.hidden { display: none; }
+
+    .spinner {
+      width: 28px; height: 28px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .overlay-text { color: var(--muted); font-size: 0.85rem; }
+
+    /* ── Error ── */
+    .error-box {
+      background: #2a1616;
+      border: 1px solid #6b2f2f;
+      color: var(--neg);
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-top: 12px;
+      font-size: 0.83rem;
+      display: none;
+    }
+    .error-box a { color: var(--neg); }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 0.73rem;
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 580px) {
+      .cards { grid-template-columns: 1fr; }
+      .refresh-btn { margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>Osakekurssit</h1>
+    <p>Kurssitiedot Yahoo Finance -palvelusta &middot; Klikkaa korttia piilottaaksesi osakkeen kuvaajasta</p>
+  </header>
+
+  <!-- Stock cards -->
+  <div class="cards" id="cards"></div>
+
+  <!-- Range + refresh controls -->
+  <div class="controls">
+    <span class="controls-label">Ajanjakso:</span>
+    <button class="range-btn" data-r="1W">1 vk</button>
+    <button class="range-btn active" data-r="1M">1 kk</button>
+    <button class="range-btn" data-r="3M">3 kk</button>
+    <button class="range-btn" data-r="6M">6 kk</button>
+    <button class="range-btn" data-r="1Y">1 v</button>
+    <button class="refresh-btn" id="refreshBtn">Paivita</button>
+  </div>
+
+  <!-- Chart -->
+  <div class="chart-wrapper">
+    <canvas id="stockChart" height="380"></canvas>
+    <div class="overlay" id="overlay">
+      <div class="spinner"></div>
+      <span class="overlay-text">Ladataan kurssitietoja...</span>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div class="error-box" id="errorBox"></div>
+
+  <footer>
+    Tiedot haetaan Yahoo Finance -palvelusta CORS-proxyn (corsproxy.io) kautta &middot;
+    Kurssit eivat ole reaaliaikaisia &middot; Ei sijoitusneuvontaa
+  </footer>
+
+</div>
+
+<script>
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Konfiguraatio
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const STOCKS = {
+  MSFT: { name: 'Microsoft', color: '#0078D4' },
+  AAPL: { name: 'Apple',     color: '#a8b2c1' },
+  NVDA: { name: 'Nvidia',    color: '#76B900' },
+};
+
+const RANGES = {
+  '1W': { range: '5d',  interval: '1d'  },
+  '1M': { range: '1mo', interval: '1d'  },
+  '3M': { range: '3mo', interval: '1d'  },
+  '6M': { range: '6mo', interval: '1wk' },
+  '1Y': { range: '1y',  interval: '1wk' },
+};
+
+// Vaihda tähän oma proxy jos corsproxy.io ei toimi:
+// 'https://api.allorigins.win/raw?url='
+const PROXY = 'https://corsproxy.io/?';
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Tila
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+let activeRange  = '1M';
+let activeStocks = new Set(Object.keys(STOCKS));
+let cache        = {};   // key = "MSFT-1M"
+let chart        = null;
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DOM-rakentaminen
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+function buildCards() {
+  const container = document.getElementById('cards');
+  Object.entries(STOCKS).forEach(([sym, info]) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.id = `card-${sym}`;
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="dot" style="background:${info.color}"></span>
+        <span class="card-symbol">${sym}</span>
+      </div>
+      <div class="card-name">${info.name}</div>
+      <div class="card-price" id="price-${sym}">–</div>
+      <div class="card-change" id="change-${sym}">–</div>
+      <div class="card-hint">Klikkaa piilottaaksesi</div>
+    `;
+    card.addEventListener('click', () => toggleStock(sym));
+    container.appendChild(card);
+  });
+}
+
+function toggleStock(sym) {
+  if (activeStocks.has(sym)) {
+    if (activeStocks.size === 1) return; // vähintään yksi aina näkyvissä
+    activeStocks.delete(sym);
+    document.getElementById(`card-${sym}`).classList.add('disabled');
+  } else {
+    activeStocks.add(sym);
+    document.getElementById(`card-${sym}`).classList.remove('disabled');
+  }
+  renderChart();
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Tietojen haku
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+async function fetchStock(symbol) {
+  const key = `${symbol}-${activeRange}`;
+  if (cache[key]) return cache[key];
+
+  const { range, interval } = RANGES[activeRange];
+  const yahooUrl =
+    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}` +
+    `?range=${range}&interval=${interval}&includePrePost=false`;
+
+  const res = await fetch(PROXY + encodeURIComponent(yahooUrl));
+  if (!res.ok) throw new Error(`HTTP ${res.status} (${symbol})`);
+
+  const json = await res.json();
+  const result = json?.chart?.result?.[0];
+  if (!result) throw new Error(`Ei dataa symbolille ${symbol}`);
+
+  const timestamps = result.timestamp ?? [];
+  const rawCloses  = result.indicators?.quote?.[0]?.close ?? [];
+  const meta       = result.meta ?? {};
+
+  // Suodata null-arvot pois
+  const points = timestamps
+    .map((t, i) => ({ date: new Date(t * 1000), price: rawCloses[i] }))
+    .filter(p => p.price != null && isFinite(p.price));
+
+  if (points.length === 0) throw new Error(`Tyhjä datasarja (${symbol})`);
+
+  const entry = { points, meta };
+  cache[key] = entry;
+  return entry;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Korttipäivitys
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+function updateCard(sym, meta, points) {
+  // regularMarketPreviousClose ei aina palaudu – käytä datapisteitä
+  const price = meta.regularMarketPrice;
+  if (!price) return;
+
+  // Hae edellinen päätöskurssi: toiseksi viimeisin datapiste
+  let prev = meta.chartPreviousClose;
+  if (points && points.length >= 2) {
+    prev = points[points.length - 2].price;
+  }
+  if (!prev) return;
+
+  const diff = price - prev;
+  const pct  = (diff / prev) * 100;
+  const sign = diff >= 0 ? '+' : '';
+  const cls  = diff >= 0 ? 'pos' : 'neg';
+
+  document.getElementById(`price-${sym}`).textContent =
+    `$${price.toFixed(2)}`;
+
+  const el = document.getElementById(`change-${sym}`);
+  el.textContent = `${sign}${diff.toFixed(2)} (${sign}${pct.toFixed(2)}%)`;
+  el.className = `card-change ${cls}`;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Kuvaaja
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+function initChart() {
+  const ctx = document.getElementById('stockChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets: [] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#161b22',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          titleColor: '#8b949e',
+          bodyColor: '#e6edf3',
+          padding: 12,
+          callbacks: {
+            title: items => {
+              const d = new Date(items[0].parsed.x);
+              return d.toLocaleDateString('fi-FI', { day: 'numeric', month: 'short', year: 'numeric' });
+            },
+            label: ctx => {
+              const v    = ctx.parsed.y;
+              const sign = v >= 0 ? '+' : '';
+              // Näytä myös absoluuttinen hinta
+              const sym  = ctx.dataset.label;
+              const key  = `${sym}-${activeRange}`;
+              const data = cache[key];
+              let priceStr = '';
+              if (data) {
+                const idx = ctx.dataIndex;
+                const p   = data.points[idx]?.price;
+                if (p != null) priceStr = `  ($${p.toFixed(2)})`;
+              }
+              return ` ${sym}: ${sign}${v.toFixed(2)}%${priceStr}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'time',
+          time: { tooltipFormat: 'dd.MM.yyyy' },
+          grid:  { color: '#1a2030' },
+          ticks: { color: '#8b949e', maxTicksLimit: 8 },
+        },
+        y: {
+          grid:  { color: '#1a2030' },
+          ticks: {
+            color: '#8b949e',
+            callback: v => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
+          },
+        },
+      },
+    },
+  });
+  // Kiinteä korkeus kontainerille
+  document.getElementById('stockChart').style.height = '380px';
+}
+
+function renderChart() {
+  if (!chart) return;
+
+  const datasets = [];
+  Object.entries(STOCKS).forEach(([sym, info]) => {
+    if (!activeStocks.has(sym)) return;
+    const key  = `${sym}-${activeRange}`;
+    const data = cache[key];
+    if (!data || !data.points.length) return;
+
+    const base  = data.points[0].price;
+    const pts   = data.points.map(p => ({
+      x: p.date,
+      y: ((p.price - base) / base) * 100,
+    }));
+
+    datasets.push({
+      label:           sym,
+      data:            pts,
+      borderColor:     info.color,
+      backgroundColor: info.color + '18',
+      borderWidth:     2,
+      pointRadius:     0,
+      pointHoverRadius: 5,
+      pointHoverBackgroundColor: info.color,
+      tension:         0.25,
+      fill:            false,
+    });
+  });
+
+  chart.data.datasets = datasets;
+  chart.update();
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Paalataus
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+async function loadAll(forceRefresh = false) {
+  setLoading(true);
+  hideError();
+  if (forceRefresh) cache = {};
+
+  const syms = Object.keys(STOCKS);
+  const results = await Promise.allSettled(syms.map(fetchStock));
+
+  const errors = [];
+  results.forEach((res, i) => {
+    const sym = syms[i];
+    if (res.status === 'fulfilled') {
+      updateCard(sym, res.value.meta, res.value.points);
+    } else {
+      console.error(`[${sym}]`, res.reason);
+      errors.push(`${sym}: ${res.reason.message}`);
+    }
+  });
+
+  renderChart();
+  setLoading(false);
+
+  if (errors.length) {
+    showError(
+      'Virhe tietojen haussa:<br>' + errors.join('<br>') +
+      '<br><br>Mahdollinen syy: CORS-proxy ei vastaa tai Yahoo Finance muutti API:aan. ' +
+      'Kokeile avata sivu uudelleen tai odota hetki.'
+    );
+  }
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   UI-apufunktiot
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+function setLoading(on) {
+  document.getElementById('overlay').classList.toggle('hidden', !on);
+  document.getElementById('refreshBtn').disabled = on;
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorBox');
+  el.innerHTML = msg;
+  el.style.display = 'block';
+}
+
+function hideError() {
+  document.getElementById('errorBox').style.display = 'none';
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Event listenersit
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+document.querySelectorAll('.range-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    activeRange = btn.dataset.r;
+    document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadAll();
+  });
+});
+
+document.getElementById('refreshBtn').addEventListener('click', () => {
+  loadAll(true);
+});
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Kaynnistys
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+buildCards();
+initChart();
+loadAll();
+</script>
+</body>
+</html>
