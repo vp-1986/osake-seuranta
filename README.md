@@ -1,0 +1,2 @@
+# osake-seuranta
+Testiprojekti
