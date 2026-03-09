@@ -184,11 +184,13 @@
   <!-- Range + refresh controls -->
   <div class="controls">
     <span class="controls-label">Ajanjakso:</span>
+    <button class="range-btn" data-r="1D">1 pv</button>
     <button class="range-btn" data-r="1W">1 vk</button>
     <button class="range-btn active" data-r="1M">1 kk</button>
     <button class="range-btn" data-r="3M">3 kk</button>
     <button class="range-btn" data-r="6M">6 kk</button>
     <button class="range-btn" data-r="1Y">1 v</button>
+    <button class="range-btn" data-r="3Y">3 v</button>
     <button class="refresh-btn" id="refreshBtn">Paivita</button>
   </div>
 
@@ -222,11 +224,13 @@ const STOCKS = {
 };
 
 const RANGES = {
+  '1D': { range: '1d',  interval: '5m'  },
   '1W': { range: '5d',  interval: '1d'  },
   '1M': { range: '1mo', interval: '1d'  },
   '3M': { range: '3mo', interval: '1d'  },
   '6M': { range: '6mo', interval: '1wk' },
   '1Y': { range: '1y',  interval: '1wk' },
+  '3Y': { range: '3y',  interval: '1mo' },
 };
 
 // Vaihda tähän oma proxy jos corsproxy.io ei toimi:
